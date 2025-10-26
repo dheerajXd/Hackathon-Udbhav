@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speech Analyzer Pro</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Chart.js (for graphs) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Load Chart.js plugin for data labels (for the bar chart) -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    
+    <style>
+        /* Use a clean, modern font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        /* Custom styles for highlighted words in the transcript */
+        .highlight-filler {
+            background-color: #fef9c3; /* Yellow-100 */
+            padding: 1px 3px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .highlight-pacing {
+            background-color: #dbeafe; /* Blue-100 */
+            padding: 1px 3px;
+            border-radius: 4px;
+            font-weight: 500;
+            text-decoration: underline;
+            text-decoration-style: wavy;
+            text-decoration-color: #60a5fa; /* Blue-400 */
+        }
+        /* Style for the loading spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-2">Speech Analyzer</h1>
+            <p class="text-lg text-gray-600">Upload your speech and get instant AI-powered feedback.</p>
+        </header>
+
+        <!-- Upload Card -->
+        <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200">
+            <form id="upload-form" class="transition-all duration-300">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-2">
+                        <label for="audio_file" class="block text-sm font-medium text-gray-700 mb-2">Select an audio file (MP3, WAV, M4A):</label>
+                        <div class="flex items-center">
+                            <label class="px-4 py-2 bg-white text-blue-600 font-medium rounded-lg shadow-sm border border-gray-300 cursor-pointer hover:bg-gray-50">
+                                <span>Choose file</span>
+                                <input type="file" id="audio_file" name="audio_file" accept="audio/*" class="hidden" required>
+                            </label>
+                            <span id="file-name" class="ml-4 text-gray-600 truncate">No file selected</span>
+                        </div>
+                    </div>
+                    <button type="submit" id="analyze-button" class="md:col-span-1 w-full bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 self-end">
+                        Analyze My Speech
+                    </button>
+                </div>
+            </form>
+
+            <!-- Loading Spinner (hidden by default) -->
+            <div id="loader" class="hidden flex-col items-center justify-center mt-6">
+                <div class="loader"></div>
+                <p class="text-gray-600 mt-2">Analyzing your speech... this may take a moment.</p>
+            </div>
+
+            <!-- Error Box (hidden by default) -->
+            <div id="error-box" class="hidden mt-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+                <strong class="font-bold">Error:</strong>
+                <span id="error-message"></span>
+            </div>
+        </div>
+
+        <!-- Full Results Container (hidden by default) -->
+        <div id="results-container" class="hidden mt-8">
+
+            <!-- Section 1: At-a-Glance Score Cards -->
+            <h2 class="text-3xl font-semibold text-gray-900 mb-4">Your Results at a Glance</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                
+                <!-- NEW: Pacing Card (is now a 2-column wide card, moved below) -->
+                
+                <!-- Filler Words Card -->
+                <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-500 mb-3">Filler Words</h3>
+                    <p class="text-5xl font-bold text-gray-900"><span id="stat-fillers">0</span> <span class="text-3xl font-medium">total</span></p>
+                    <p class="text-gray-600 mt-2 text-sm">You used <span id="stat-fillers-unique">0</span> unique filler words.</p>
+                </div>
+
+                <!-- Weak Language Card -->
+                <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-500 mb-3">Weak Language</h3>
+                    <p class="text-5xl font-bold text-gray-900"><span id="stat-weak-words">0</span> <span class="text-3xl font-medium">uses</span></p>
+                    <p class="text-gray-600 mt-2 text-sm">e.g., "I think", "maybe", "sort of"</p>
+                </div>
+                
+                <!-- Clarity Card -->
+                <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-500 mb-3">Clarity (Grade Level)</h3>
+                    <p class="text-5xl font-bold text-gray-900"><span id="stat-grade">0.0</span></p>
+                    <p id="clarity-feedback" class="text-gray-600 mt-2 text-sm"></p>
+                </div>
+            </div>
+
+            <!-- *** NEW PACING SECTION *** -->
+            <h2 class="text-3xl font-semibold text-gray-900 mb-4 mt-8">Pacing Analysis</h2>
+            <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                    
+                    <!-- Pace Gauge -->
+                    <div class="md:col-span-1 flex flex-col items-center justify-center">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-2">Your Current Pace</h3>
+                        <div class="relative w-48 h-48">
+                            <!-- Canvas for the gauge -->
+                            <canvas id="pace-gauge-chart"></canvas>
+                            <!-- Text overlay for WPM -->
+                            <div class="absolute inset-0 flex flex-col items-center justify-center" style="padding-top:87px;">
+                                <span id="pace-gauge-wpm" class="text-5xl font-bold text-gray-900">0</span>
+                                <span class="text-lg text-gray-600">WPM</span>
+                            </div>
+                        </div>
+                        <p id="pacing-feedback" class="text-gray-600 mt-3 text-sm text-center font-medium"></p>
+                    </div>
+                    
+                    <!-- Pace History Chart -->
+                    <div class="md:col-span-2">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4 text-center md:text-left">Your Pace Over Time</h3>
+                        <div class="relative h-64">
+                            <!-- Canvas for the line chart -->
+                            <canvas id="pace-history-chart"></canvas>
+                             <!-- Message for when there's no data (will be hidden once chart is drawn) -->
+                            <div id="pace-history-nodata" class="absolute inset-0 flex items-center justify-center hidden">
+                                <p class="text-gray-500">Not enough data for history chart yet.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 2: How to Improve (A/B Test & Charts) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
+                
+                <!-- Column 1: A/B Test & AI Coach -->
+                <div class="lg:col-span-1 space-y-6">
+                    <!-- Improvement Tracker (A/B Test) -->
+                    <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">Improvement Tracker</h3>
+                        <div id="ab-test-results" class="space-y-3">
+                            <!-- A/B Test data will be populated here -->
+                        </div>
+                    </div>
+
+                    <!-- AI Coach Tips -->
+                    <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">AI Coach Tips</h3>
+                        <div class="space-y-3">
+                            <div>
+                                <strong class="text-sm font-semibold text-gray-800">Pacing:</strong>
+                                <p id="tip-pacing" class="text-sm text-gray-600"></p>
+                            </div>
+                            <div>
+                                <strong class="text-sm font-semibold text-gray-800">Clarity:</strong>
+                                <p id="tip-clarity" class="text-sm text-gray-600"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Column 2 & 3: Charts -->
+                <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Language Balance Chart -->
+                    <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">Language Balance</h3>
+                        <canvas id="language-chart"></canvas>
+                    </div>
+                    <!-- Filler Word Breakdown Chart -->
+                    <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">Filler Word Breakdown</h3>
+                        <canvas id="filler-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 3: Interactive Transcript -->
+            <div class="bg-white p-6 shadow-lg rounded-2xl border border-gray-200 mt-8">
+                <h2 class="text-3xl font-semibold text-gray-900 mb-4">Interactive Transcript</h2>
+                <div class="flex flex-wrap gap-x-4 gap-y-2 mb-4 text-sm">
+                    <span class="flex items-center"><span class="h-4 w-4 rounded-full bg-yellow-100 border border-yellow-300 mr-2"></span> = Filler Word</span>
+                    <span class="flex items-center"><span class="h-4 w-4 rounded-full bg-blue-100 border border-blue-300 mr-2"></span> = Pacing Mismatch</span>
+                </div>
+                <div id="transcript-text" class="text-base md:text-lg text-gray-700 leading-relaxed max-h-[600px] overflow-y-auto p-4 bg-gray-50 rounded-lg">
+                    <!-- Transcript will be populated by JS -->
+                </div>
+            </div>
+
+        </div> <!-- End Results Container -->
+    </div> <!-- End Main Container -->
+
+    <script>
+        // --- CHART REGISTRATION ---
+        Chart.register(ChartDataLabels); 
+
+        // --- DOM ELEMENT REFERENCES ---
+        const form = document.getElementById('upload-form');
+        const analyzeButton = document.getElementById('analyze-button');
+        const loader = document.getElementById('loader');
+        const errorBox = document.getElementById('error-box');
+        const errorMessage = document.getElementById('error-message');
+        const resultsContainer = document.getElementById('results-container');
+        const fileInput = document.getElementById('audio_file');
+        const fileName = document.getElementById('file-name');
+        const noDataMsg = document.getElementById('pace-history-nodata'); // Get ref to no-data message
+        
+        // Chart.js chart instances
+        let languageChart = null;
+        let fillerChart = null;
+        let paceGaugeChart = null;
+        let paceHistoryChart = null;
+
+        // --- FILE INPUT HANDLER ---
+        fileInput.addEventListener('change', () => {
+            fileName.textContent = fileInput.files[0] ? fileInput.files[0].name : 'No file selected';
+        });
+
+        // --- FORM SUBMISSION HANDLER ---
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault(); // Stop the page from reloading
+            
+            console.log("[DEBUG] Form submitted."); // DEBUG
+
+            // Hide previous results/errors
+            errorBox.classList.add('hidden');
+            resultsContainer.classList.add('hidden');
+            noDataMsg.classList.add('hidden'); // Hide no-data message on new submission
+            
+            // Show loader and disable button
+            loader.classList.remove('hidden');
+            loader.classList.add('flex');
+            analyzeButton.disabled = true;
+            analyzeButton.textContent = 'Analyzing...';
+            console.log("[DEBUG] Loader shown."); // DEBUG
+            
+            const formData = new FormData();
+            formData.append('audio_file', fileInput.files[0]);
+
+            try {
+                // 1. Send the file to the Flask backend
+                console.log("[DEBUG] Sending fetch request to /analyze..."); // DEBUG
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+                console.log("[DEBUG] Fetch response received:", response); // DEBUG
+
+                // 2. Get the JSON report back from Flask
+                console.log("[DEBUG] Parsing JSON response..."); // DEBUG
+                const data = await response.json();
+                console.log("[DEBUG] JSON parsed successfully:", data); // DEBUG
+
+                // 3. Check for server-side errors
+                if (!response.ok) {
+                    console.error("[DEBUG] Server returned an error:", data.error); // DEBUG
+                    throw new Error(data.error || 'An unknown server error occurred.');
+                }
+
+                // 4. Update the UI with the new data
+                console.log("[DEBUG] Calling updateUI function..."); // DEBUG
+                updateUI(data);
+                console.log("[DEBUG] updateUI function completed."); // DEBUG
+
+            } catch (err) {
+                // 5. Handle network or JSON parsing errors
+                console.error('[DEBUG] Fetch Error:', err); // DEBUG
+                showError(err.message || 'Failed to fetch. Check server console and network tab.'); // Updated error message
+            } finally {
+                // 6. Hide loader and re-enable button
+                loader.classList.add('hidden');
+                loader.classList.remove('flex');
+                analyzeButton.disabled = false;
+                analyzeButton.textContent = 'Analyze My Speech';
+                console.log("[DEBUG] Loader hidden, button re-enabled."); // DEBUG
+            }
+        });
+
+        /**
+         * Shows an error message in the error box.
+         */
+        function showError(message) {
+            console.log("[DEBUG] showError called with message:", message); // DEBUG
+            errorMessage.textContent = message;
+            errorBox.classList.remove('hidden');
+        }
+
+        /**
+         * Main function to populate the entire UI with data from the server.
+         */
+        function updateUI(data) {
+            console.log("[DEBUG] Data received for UI update:", data); // DEBUG
+
+            // Unhide the results
+            resultsContainer.classList.remove('hidden');
+            console.log("[DEBUG] Results container unhidden."); // DEBUG
+            
+            // --- 1. Populate At-a-Glance Cards ---
+             try { // Wrap potentially failing DOM updates in try...catch
+                document.getElementById('stat-fillers').textContent = data?.fillers?.total_count ?? 'N/A';
+                document.getElementById('stat-fillers-unique').textContent = Object.keys(data?.fillers?.summary ?? {}).length;
+                document.getElementById('stat-weak-words').textContent = data?.language?.weak_word_count ?? 'N/A';
+                document.getElementById('stat-grade').textContent = (data?.audience?.grade_level ?? 0).toFixed(1);
+                console.log("[DEBUG] Populated score cards."); // DEBUG
+
+                // --- 2. Populate AI Coach Tips ---
+                document.getElementById('tip-pacing').textContent = data?.pacing?.feedback ?? 'N/A';
+                document.getElementById('tip-clarity').textContent = data?.audience?.readability_feedback ?? 'N/A';
+                console.log("[DEBUG] Populated AI coach tips."); // DEBUG
+
+                // --- 3. Populate A/B Test Section ---
+                populateABTest(data?.ab_test);
+                console.log("[DEBUG] Populated A/B test."); // DEBUG
+                
+                // --- 4. Render Charts ---
+                renderLanguageChart(data?.language);
+                renderFillerChart(data?.fillers?.summary);
+                // --- NEW --- Render the pace charts
+                renderPaceGauge(data?.pacing?.wpm, data?.pacing?.feedback); 
+                renderPaceHistoryChart(data?.history); 
+
+                // --- 5. Generate Interactive Transcript ---
+                generateHighlightedTranscript(
+                    data?.transcript,
+                    data?.fillers?.summary,
+                    data?.word_pacing 
+                );
+                 console.log("[DEBUG] Generated transcript."); // DEBUG
+             } catch (uiError) {
+                 console.error("[DEBUG] Error updating UI elements:", uiError);
+                 showError("Failed to display some results. Data might be incomplete.");
+             }
+        }
+
+        /**
+         * Populates the "Improvement Tracker" (A/B Test) card.
+         */
+        function populateABTest(abData) {
+            console.log("[DEBUG] Populating A/B test with data:", abData); // DEBUG
+            const container = document.getElementById('ab-test-results');
+            
+            if (!abData || abData.message) { 
+                container.innerHTML = `<p class="text-sm text-gray-600">${abData?.message || 'Comparison data unavailable.'}</p>`;
+                return;
+            }
+
+            const createStatLine = (label, change) => {
+                const numChange = typeof change === 'number' && !isNaN(change) ? change : 0;
+                let colorClass = 'text-gray-600';
+                let text = `${numChange}`;
+                if (numChange > 0) {
+                    colorClass = 'text-red-500'; 
+                    text = `+${numChange}`;
+                } else if (numChange < 0) {
+                    colorClass = 'text-green-500'; 
+                } else {
+                     text = `±0`; 
+                }
+
+                if (label === 'Pace (WPM)') {
+                     colorClass = 'text-blue-500'; 
+                     text = numChange >= 0 ? `+${numChange}` : `${numChange}`;
+                }
+
+                return `
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-medium text-gray-800">${label}</span>
+                        <span class="text-sm font-bold ${colorClass}">${text}</span>
+                    </div>
+                `;
+            };
+
+            container.innerHTML = `
+                <p class="text-xs text-gray-500 mb-2">Compared to your last run:</p>
+                ${createStatLine('Pace (WPM)', abData.pacing_change)}
+                ${createStatLine('Filler Words', abData.filler_words_change)}
+                ${createStatLine('Weak Words', abData.weak_words_change)}
+            `;
+        }
+
+        /**
+         * Finds all problem words and highlights them in the transcript.
+         */
+        function generateHighlightedTranscript(transcript, fillers, wordPacing) {
+            console.log("[DEBUG] Generating highlighted transcript..."); // DEBUG
+            const transcriptContainer = document.getElementById('transcript-text');
+            let safeTranscript = typeof transcript === 'string' ? transcript : '';
+            let highlightedText = ` ${safeTranscript} `;
+
+            const fillerSet = new Set(Object.keys(fillers || {}));
+            const pacingSet = new Set([
+                ...(wordPacing?.fast_words || []),
+                ...(wordPacing?.slow_words || [])
+            ]);
+
+            const createRegex = (word) => {
+                 if (!word || typeof word !== 'string') return null; 
+                const escapedWord = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                 if (!escapedWord) return null; 
+                return new RegExp(`(\\b${escapedWord}\\b)(?![^<]*?>)`, 'gi');
+            };
+
+            pacingSet.forEach(word => {
+                const regex = createRegex(word);
+                 if (regex) { 
+                    highlightedText = highlightedText.replace(regex, (match) => 
+                        `<span class="highlight-pacing">${match}</span>`
+                    );
+                 }
+            });
+
+            fillerSet.forEach(word => {
+                const regex = createRegex(word);
+                 if (regex) { 
+                    highlightedText = highlightedText.replace(regex, (match) => 
+                        `<span class="highlight-filler">${match}</span>`
+                    );
+                 }
+            });
+
+            transcriptContainer.innerHTML = highlightedText.trim(); 
+        }
+
+        /**
+         * Renders the Language Balance Doughnut Chart.
+         */
+        function renderLanguageChart(languageData) {
+            console.log("[DEBUG] Calling renderLanguageChart..."); // DEBUG
+            const ctx = document.getElementById('language-chart').getContext('2d'); 
+            const weakCount = languageData?.weak_word_count || 0;
+            const persuasiveCount = languageData?.persuasive_word_count || 0;
+
+            if (languageChart) languageChart.destroy();
+
+            languageChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: { 
+                    labels: ['Weak Words', 'Persuasive Words'],
+                    datasets: [{
+                        label: 'Word Count',
+                        data: [ weakCount, persuasiveCount ],
+                        backgroundColor: ['#ef4444', '#22c55e'],
+                    }]
+                 },
+                options: { 
+                    responsive: true,
+                    cutout: '70%',
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        title: { display: false },
+                        datalabels: { display: false }
+                    }
+                 }
+            });
+            console.log("[DEBUG] Language chart created/updated."); // DEBUG
+        }
+
+        /**
+         * Renders the Filler Word Breakdown Bar Chart.
+         */
+        function renderFillerChart(fillerData) {
+            console.log("[DEBUG] Calling renderFillerChart..."); // DEBUG
+            const ctx = document.getElementById('filler-chart').getContext('2d');
+            const safeFillerData = fillerData || {};
+            const sortedFillers = Object.entries(safeFillerData).sort(([,a],[,b]) => b-a).slice(0, 10);
+            const labels = sortedFillers.map(item => item[0]);
+            const data = sortedFillers.map(item => item[1]);
+
+            if (fillerChart) fillerChart.destroy();
+
+            fillerChart = new Chart(ctx, {
+                type: 'bar',
+                data: { 
+                    labels: labels,
+                    datasets: [{
+                        label: 'Times Used',
+                        data: data,
+                        backgroundColor: '#f59e0b', 
+                        borderRadius: 4
+                    }]
+                 },
+                options: { 
+                    indexAxis: 'y', 
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: false },
+                        datalabels: {
+                            anchor: 'end', 
+                            align: 'right', 
+                            color: '#1f2937', 
+                            font: { weight: 'bold' },
+                            formatter: (value) => value > 0 ? value : ''
+                        }
+                    },
+                    scales: {
+                        x: { 
+                            beginAtZero: true,
+                            grid: { display: false, drawBorder: false },
+                            ticks: { stepSize: 1 }
+                        },
+                        y: { 
+                            grid: { display: false, drawBorder: false }
+                        }
+                    }
+                 }
+            });
+            console.log("[DEBUG] Filler chart created/updated."); // DEBUG
+        }
+
+        /**
+         * Renders the Pace Gauge Chart (Speedometer).
+         */
+        function renderPaceGauge(wpm, feedback) {
+            console.log("[DEBUG] Calling renderPaceGauge with WPM:", wpm); // DEBUG
+            const ctx = document.getElementById('pace-gauge-chart').getContext('2d');
+            const safeWpm = typeof wpm === 'number' && !isNaN(wpm) ? wpm : 0;
+            const safeFeedback = typeof feedback === 'string' ? feedback : 'Pacing data unavailable.';
+
+            document.getElementById('pace-gauge-wpm').textContent = safeWpm.toFixed(0);
+            document.getElementById('pacing-feedback').textContent = safeFeedback;
+
+            if (paceGaugeChart) paceGaugeChart.destroy();
+
+            let gaugeColor = '#f59e0b'; // Amber-500 (Okay)
+            if (safeWpm < 120) gaugeColor = '#3b82f6'; // Blue-500 (Too Slow)
+            else if (safeWpm > 160) gaugeColor = '#ef4444'; // Red-500 (Too Fast)
+            else gaugeColor = '#22c55e'; // Green-500 (Ideal)
+
+            const gaugeValue = Math.min(safeWpm, 200); // Max value displayed is 200
+            const remainingValue = Math.max(0, 200 - gaugeValue); // Ensure remaining is not negative
+
+            paceGaugeChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [gaugeValue, remainingValue], 
+                        backgroundColor: [gaugeColor, '#e5e7eb'], // Segment color, background color
+                        borderWidth: 0, 
+                        circumference: 180, // Half circle
+                        rotation: 270,      // Start at bottom-left
+                    }]
+                },
+                options: { 
+                    responsive: true,
+                    maintainAspectRatio: true, 
+                    cutout: '75%', 
+                    plugins: {
+                        legend: { display: false }, 
+                        tooltip: { enabled: false }, 
+                        // Explicitly disable datalabels for the gauge chart
+                        datalabels: { 
+                            display: false 
+                        } 
+                    }
+                 }
+            });
+             console.log("[DEBUG] Pace gauge chart created/updated."); // DEBUG
+        }
+        
+        /**
+         * Renders the Pace History Line Chart.
+         * --- THIS FUNCTION HAS BEEN MODIFIED ---
+         */
+        function renderPaceHistoryChart(historyData) {
+            console.log("[DEBUG] Calling renderPaceHistoryChart with data:", historyData); // DEBUG
+            const ctx = document.getElementById('pace-history-chart').getContext('2d');
+            const noDataContainer = document.getElementById('pace-history-nodata');
+            
+            // --- MODIFIED CHECK --- Now draws even with 1 data point
+            // Check if historyData is actually an array AND has items
+            if (!Array.isArray(historyData) || historyData.length === 0) {
+                 console.warn("[DEBUG] Pace history data is missing, empty, or not an array. Showing 'no data' message."); // More specific log
+                 if (paceHistoryChart) paceHistoryChart.destroy();
+                 // Show the "no data" message and hide the canvas
+                 noDataContainer.classList.remove('hidden'); 
+                 ctx.canvas.classList.add('hidden'); // Hide the canvas itself
+                return; 
+            } else {
+                 // Ensure message is hidden and canvas is shown if we DO have data
+                 console.log("[DEBUG] History data is valid. Hiding 'no data' message and showing canvas."); // DEBUG
+                 noDataContainer.classList.add('hidden');
+                 ctx.canvas.classList.remove('hidden');
+            }
+
+
+            const labels = historyData.map((d, i) => `Run ${i + 1}`);
+            if (labels.length > 0) labels[labels.length - 1] = 'Current';
+            // Ensure WPM data is numeric, default to 0 if invalid
+            const data = historyData.map(d => (typeof d?.wpm === 'number' && !isNaN(d.wpm) ? d.wpm : 0));
+            console.log("[DEBUG] History chart labels:", labels); // DEBUG
+            console.log("[DEBUG] History chart data points:", data); // DEBUG
+            
+            if (paceHistoryChart) paceHistoryChart.destroy();
+
+            paceHistoryChart = new Chart(ctx, {
+                type: 'line',
+                data: { 
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Your WPM',
+                            data: data,
+                            borderColor: '#3b82f6', 
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)', 
+                            fill: true, 
+                            tension: 0.1 
+                        },
+                        {
+                            label: 'Ideal Min (120 WPM)', 
+                            data: Array(labels.length).fill(120), 
+                            borderColor: 'rgba(34, 197, 94, 0.3)', 
+                            borderDash: [5, 5], 
+                            pointRadius: 0, 
+                            fill: false, 
+                            hidden: true 
+                        },
+                        {
+                            label: 'Ideal Max (160 WPM)', 
+                            data: Array(labels.length).fill(160), 
+                            borderColor: 'rgba(34, 197, 94, 0.3)', 
+                            borderDash: [5, 5], 
+                            pointRadius: 0, 
+                            fill: '-1', 
+                            backgroundColor: 'rgba(34, 197, 94, 0.05)', 
+                            hidden: true 
+                        }
+                    ]
+                 },
+                options: { 
+                    responsive: true,
+                    maintainAspectRatio: false, 
+                    plugins: {
+                        legend: {
+                            display: true, 
+                            position: 'bottom',
+                            labels: {
+                                filter: function(legendItem, chartData) {
+                                    return legendItem.datasetIndex === 0;
+                                },
+                                generateLabels: function(chart) {
+                                    const defaultLabels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                                    const wpmLabel = defaultLabels.filter(l => l.datasetIndex === 0);
+                                    wpmLabel.push({
+                                        text: 'Ideal Range (120-160 WPM)',
+                                        fillStyle: 'rgba(34, 197, 94, 0.1)', 
+                                        strokeStyle: 'rgba(34, 197, 94, 0.3)', 
+                                        lineWidth: 1,
+                                        hidden: false 
+                                    });
+                                    return wpmLabel;
+                                }
+                            }
+                        },
+                        datalabels: { display: false }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: false, 
+                            suggestedMin: 80, 
+                            suggestedMax: 200, 
+                            title: { display: true, text: 'Words Per Minute (WPM)' }
+                        },
+                        x: { 
+                           title: { display: true, text: 'Practice Sessions' }
+                        }
+                    }
+                 }
+            });
+             console.log("[DEBUG] Pace history chart created/updated."); // DEBUG
+        }
+    </script>
+</body>
+</html>
+
